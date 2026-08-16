@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="问络 · 问题神经网络平台：关联式提问与单点纵深">
+  <title>问络 · 问题神经网络平台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='5' cy='5' r='2.4' fill='%234f46e5'/%3E%3Ccircle cx='19' cy='6' r='2.4' fill='%234f46e5'/%3E%3Ccircle cx='12' cy='19' r='2.4' fill='%234f46e5'/%3E%3Cpath d='M6.8 6.8 10.8 17M17.2 7.8 13.4 17M6.3 15.6 17 7.8' fill='none' stroke='%234f46e5' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div id="authView" class="view">
+    <div class="auth-shell">
+      <div class="auth-brand">
+        <svg viewBox="0 0 24 24" class="logo" aria-hidden="true">
+          <circle cx="5" cy="5" r="2.4"/>
+          <circle cx="19" cy="6" r="2.4"/>
+          <circle cx="12" cy="19" r="2.4"/>
+          <circle cx="5" cy="17" r="1.6"/>
+          <path d="M6.8 6.8 10.8 17M17.2 7.8 13.4 17M6.3 15.6 17 7.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <h1>问络</h1>
+        <p class="auth-sub">问题神经网络 · 关联式提问 · 单点纵深</p>
+      </div>
+      <div class="auth-card">
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab active" data-tab="login" role="tab" aria-selected="true">登录</button>
+          <button type="button" class="auth-tab" data-tab="register" role="tab" aria-selected="false">注册</button>
+        </div>
+        <form id="authForm" novalidate>
+          <div class="field" id="fieldName" hidden>
+            <label for="authName">昵称</label>
+            <input id="authName" name="name" type="text" maxlength="20" placeholder="怎么称呼你" autocomplete="nickname">
+          </div>
+          <div class="field">
+            <label for="authEmail">邮箱</label>
+            <input id="authEmail" name="email" type="email" maxlength="120" placeholder="you@example.com" autocomplete="email" required>
+          </div>
+          <div class="field">
+            <label for="authPass">密码</label>
+            <input id="authPass" name="password" type="password" maxlength="72" placeholder="至少 6 位" autocomplete="current-password" required>
+          </div>
+          <div class="field" id="fieldPass2" hidden>
+            <label for="authPass2">确认密码</label>
+            <input id="authPass2" name="password2" type="password" maxlength="72" placeholder="再输入一次" autocomplete="new-password">
+          </div>
+          <div id="authError" class="auth-error" hidden></div>
+          <button type="submit" class="btn btn-primary btn-block" id="authSubmit">登录</button>
+        </form>
+        <p class="auth-foot text-small muted">首次注册会自动创建一个示例问题网络</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="appView" class="view hidden">
+    <header class="topbar">
+      <button type="button" class="icon-btn" id="btnSidebar" aria-label="打开侧栏">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <div class="brand-mini">
+        <svg viewBox="0 0 24 24" class="logo" aria-hidden="true">
+          <circle cx="5" cy="5" r="2.4"/><circle cx="19" cy="6" r="2.4"/><circle cx="12" cy="19" r="2.4"/><circle cx="5" cy="17" r="1.6"/>
+          <path d="M6.8 6.8 10.8 17M17.2 7.8 13.4 17M6.3 15.6 17 7.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span>问络</span>
+      </div>
+      <div class="net-meta">
+        <span id="netTitle" class="net-title">未选择网络</span>
+        <span id="saveStatus" class="save-status ok">已保存</span>
+      </div>
+      <div class="top-actions">
+        <button type="button" class="btn btn-ghost" id="btnImport">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0 4 4m-4-4 4 4M4 21h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          导入
+        </button>
+        <button type="button" class="btn btn-ghost" id="btnExport">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 21h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          导出
+        </button>
+        <button type="button" class="btn btn-primary" id="btnNewNet">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          新建网络
+        </button>
+        <button type="button" class="btn btn-ghost icon-btn-wide" id="btnInspector" aria-label="节点编辑面板">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="user-menu">
+          <button type="button" class="btn btn-ghost" id="btnUser">
+            <span class="avatar" id="userAvatar"></span>
+            <span id="userName">用户</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="dropdown hidden" id="userDropdown">
+            <button type="button" class="dropdown-item" id="btnLogout">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              退出登录
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="side-section">
+          <div class="side-head">我的网络 <span class="count" id="netCount">0</span></div>
+          <div class="net-list" id="netList"></div>
+        </div>
+        <div class="side-section">
+          <div class="side-head">模板库</div>
+          <div class="net-list" id="tplList"></div>
+        </div>
+        <div class="side-foot">问络 v1.0 · 本地部署</div>
+      </aside>
+      <div class="mask hidden" id="sidebarMask"></div>
+
+      <main class="main">
+        <div class="canvas-card" id="canvasCard">
+          <svg id="netSvg" aria-label="问题神经网络画布">
+            <title>问题神经网络画布</title>
+            <g id="world">
+              <g id="edges"></g>
+              <g id="nodes"></g>
+              <path id="linkPrev" d=""></path>
+            </g>
+          </svg>
+          <div class="empty-state hidden" id="emptyState">
+            <svg viewBox="0 0 24 24" class="empty-icon" aria-hidden="true">
+              <circle cx="5" cy="5" r="2.2"/><circle cx="19" cy="6" r="2.2"/><circle cx="12" cy="19" r="2.2"/>
+              <path d="M6.8 6.8 10.8 17M17.2 7.8 13.4 17M6.3 15.6 17 7.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            </svg>
+            <p class="empty-title">还没有问题网络</p>
+            <p class="muted text-small">新建一个空白网络，或从模板库开始</p>
+            <div class="empty-actions">
+              <button type="button" class="btn btn-primary" id="btnEmptyNew">新建网络</button>
+              <button type="button" class="btn btn-ghost" id="btnEmptyTpl">从模板创建</button>
+            </div>
+          </div>
+          <div class="depth-view hidden" id="depthView">
+            <div class="depth-top">
+              <button type="button" class="btn btn-ghost" id="depthBack">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-7-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                返回网络
+              </button>
+              <div class="depth-title" id="depthTitle"></div>
+              <div class="depth-count text-small muted" id="depthCount"></div>
+            </div>
+            <div class="depth-body" id="depthBody">
+              <div class="depth-rail" id="depthRail"></div>
+              <div class="depth-stack" id="depthStack"></div>
+            </div>
+            <div class="depth-foot">
+              <span class="text-small muted">上滑/下滑换层 · 双指捏合展开细节 · 左滑卡片建立关联</span>
+              <button type="button" class="btn btn-ghost" id="depthEdit">编辑纵深</button>
+              <button type="button" class="btn btn-primary" id="depthAsk">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                追问建议
+              </button>
+            </div>
+          </div>
+          <button type="button" class="gesture-toggle" id="btnGesture">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V6a2 2 0 0 1 4 0v5m0-4a2 2 0 0 1 4 0v4m-4-2v5.5a4.5 4.5 0 0 0 9 0V12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 12a3 3 0 0 0 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            手势模式
+          </button>
+          <video id="gestureVideo" class="gesture-video hidden" playsinline muted autoplay></video>
+          <div id="gestureCursor" class="gesture-cursor hidden"></div>
+          <div class="toast" id="toast" role="status" aria-live="polite"></div>
+          <input id="inlineEdit" class="inline-edit hidden" aria-label="节点名称" maxlength="40">
+        </div>
+        <div class="status-bar" id="statusBar"></div>
+      </main>
+
+      <aside class="inspector" id="inspector">
+        <div class="insp-head">
+          <span>节点编辑</span>
+          <button type="button" class="icon-btn" id="btnInspClose" aria-label="关闭编辑面板">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="insp-body" id="inspBody"></div>
+      </aside>
+      <div class="mask hidden" id="inspMask"></div>
+    </div>
+  </div>
+
+  <div id="modalRoot"></div>
+  <input type="file" id="importFile" accept=".json,application/json" hidden>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/canvas.js"></script>
+  <script src="/js/depth.js"></script>
+  <script src="/js/gesture.js"></script>
+  <script src="/js/editor.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

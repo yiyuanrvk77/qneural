@@ -1,0 +1,13 @@
+{
+  "name": "qneural",
+  "version": "1.0.0",
+  "description": "问络 · 问题神经网络平台 —— 关联式提问与单点纵深",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
