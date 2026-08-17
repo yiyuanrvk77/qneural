@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>问络 · 神经网络纵深预览</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060c;overflow:hidden;font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;}
+  #c{display:block;width:100vw;height:100vh;cursor:grab;}
+  #c:active{cursor:grabbing;}
+  .hud{position:fixed;left:18px;top:16px;color:#cbd5e1;pointer-events:none;user-select:none;z-index:2;}
+  .hud h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.06em;color:#e2e8f0;}
+  .hud p{margin:5px 0 0;font-size:12px;color:#7c8aa0;}
+  .hint{position:fixed;right:16px;bottom:14px;color:#6b7a91;font-size:12px;pointer-events:none;user-select:none;z-index:2;}
+  .note{position:fixed;left:50%;top:52%;transform:translate(-50%,-50%);font-size:34px;color:#ffe08a;pointer-events:none;user-select:none;opacity:0;z-index:3;text-shadow:0 0 18px rgba(255,205,100,.7);}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <h1>问络 · 神经网络纵深</h1>
+  <p>有机神经网 · 纵深略延展 · 近大远小</p>
+</div>
+<div class="hint">拖拽旋转 · 滚轮缩放 · 点击节点触发音阶</div>
+<div class="note" id="note"></div>
+<script>
+(function () {
+  'use strict';
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var W = 0, H = 0, DPR = 1;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = canvas.width = Math.floor(window.innerWidth * DPR);
+    H = canvas.height = Math.floor(window.innerHeight * DPR);
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ---- 构造有机神经网络（第二版 · 轻度纵深） ----
+  var N = 160;
+  var XR = 280, YR = 200, ZR = 420;
+  var nodes = [];
+  var links = [];
+  var edgeSet = {};
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+  function addNode(x, y, z) {
+    nodes.push({ x: x, y: y, z: z, gold: Math.random() < 0.13, size: rand(0.7, 1.4) });
+    return nodes.length - 1;
+  }
+  function addEdge(a, b) {
+    var key = a < b ? (a + '_' + b) : (b + '_' + a);
+    if (edgeSet[key]) return;
+    edgeSet[key] = true;
+    links.push([a, b]);
+  }
+
+  // 有机椭球分布：核心略密、外围略疏，并沿 Z 轴略加长
+  for (var i = 0; i < N; i++) {
+    var u = Math.random() * 2 - 1;
+    var th = Math.random() * Math.PI * 2;
+    var s = Math.sqrt(1 - u * u);
+    var r = Math.random() < 0.38 ? Math.cbrt(Math.random()) * 0.42 : 0.42 + Math.cbrt(Math.random()) * 0.58;
+    addNode(r * s * Math.cos(th) * XR, r * s * Math.sin(th) * YR, r * u * ZR);
+  }
+
+  // 每个节点连到最近 4 个邻居，形成有机网状
+  var K = 4;
+  var total = nodes.length;
+  for (var a = 0; a < total; a++) {
+    var dists = [];
+    for (var b = 0; b < total; b++) {
+      if (a === b) continue;
+      var dx = nodes[a].x - nodes[b].x;
+      var dy = nodes[a].y - nodes[b].y;
+      var dz = nodes[a].z - nodes[b].z;
+      dists.push({ b: b, d: dx * dx + dy * dy + dz * dz });
+    }
+    dists.sort(function (p, q) { return p.d - q.d; });
+    for (var k = 0; k < K; k++) addEdge(a, dists[k].b);
+  }
+
+  // 少量长程连接，增强流动感
+  for (var e = 0; e < 90; e++) {
+    var ea = Math.floor(Math.random() * total);
+    var eb = Math.floor(Math.random() * total);
+    if (ea === eb) continue;
+    var ex = nodes[ea].x - nodes[eb].x;
+    var ey = nodes[ea].y - nodes[eb].y;
+    var ez = nodes[ea].z - nodes[eb].z;
+    if (ex * ex + ey * ey + ez * ez < 210 * 210) addEdge(ea, eb);
+  }
+
+  // ---- 相机与投影 ----
+  var cam = { rx: -0.42, ry: 0.0, d: 720, zoom: 1 };
+  var auto = true;
+  var proj = nodes.map(function () { return { x: 0, y: 0, s: 1, z2: 0 }; });
+
+  function project() {
+    var cx = Math.cos(cam.ry), sx = Math.sin(cam.ry);
+    var cy = Math.cos(cam.rx), sy = Math.sin(cam.rx);
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var x = n.x, y = n.y, z = n.z;
+      var x1 = x * cx + z * sx;
+      var z1 = -x * sx + z * cx;
+      var y1 = y * cy - z1 * sy;
+      var z2 = y * sy + z1 * cy;
+      var dist = cam.d - z2;
+      var s = (dist > 40) ? (cam.d / dist) * cam.zoom : cam.zoom * 6;
+      proj[i].x = W / 2 + x1 * s;
+      proj[i].y = H / 2 - y1 * s;
+      proj[i].s = s;
+      proj[i].z2 = z2;
+    }
+  }
+
+  // ---- 音阶（宫商角徵羽 五声音阶）----
+  var actx = null;
+  function ensureAudio() { if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); } }
+  var scale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+  var noteEl = document.getElementById('note');
+  function playNote(freq, idx) {
+    ensureAudio();
+    if (actx.state === 'suspended') actx.resume();
+    var t = actx.currentTime;
+    var o = actx.createOscillator();
+    var g = actx.createGain();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.34, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t); o.stop(t + 1.2);
+    var names = ['宫', '商', '角', '徵', '羽', '宫', '商', '角'];
+    noteEl.textContent = names[idx] + ' · ' + Math.round(freq) + 'Hz';
+    noteEl.style.transition = 'none';
+    noteEl.style.opacity = 1;
+    requestAnimationFrame(function () {
+      noteEl.style.transition = 'opacity .8s ease';
+      noteEl.style.opacity = 0;
+    });
+  }
+
+  // ---- 交互 ----
+  var dragging = false, px = 0, py = 0;
+  var pulse = -1, pulseT = 0;
+
+  canvas.addEventListener('mousedown', function (e) { dragging = true; px = e.clientX; py = e.clientY; auto = false; });
+  window.addEventListener('mouseup', function () { dragging = false; });
+  window.addEventListener('mousemove', function (e) {
+    if (dragging) {
+      cam.ry += (e.clientX - px) * 0.005;
+      cam.rx += (e.clientY - py) * 0.005;
+      cam.rx = Math.max(-1.2, Math.min(1.2, cam.rx));
+      px = e.clientX; py = e.clientY;
+    } else {
+      canvas.style.cursor = pick(e.clientX, e.clientY) >= 0 ? 'pointer' : 'grab';
+    }
+  });
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    cam.zoom = Math.max(0.4, Math.min(2.6, cam.zoom * (e.deltaY < 0 ? 1.08 : 0.92)));
+  }, { passive: false });
+  canvas.addEventListener('click', function (e) {
+    var i = pick(e.clientX, e.clientY);
+    if (i >= 0) {
+      var n = nodes[i];
+      var t = (n.y + YR) / (2 * YR);  // 0..1
+      var idx = Math.max(0, Math.min(scale.length - 1, Math.round(t * (scale.length - 1))));
+      playNote(scale[idx], idx);
+      pulse = i; pulseT = 0;
+    }
+  });
+
+  function pick(cx, cy) {
+    var best = -1, bd = 1e9;
+    for (var i = 0; i < nodes.length; i++) {
+      var p = proj[i];
+      var r = Math.max(5, 9 * p.s * DPR);
+      var dx = p.x - cx * DPR, dy = p.y - cy * DPR;
+      var d = dx * dx + dy * dy;
+      if (d < r * r && d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  // ---- 渲染 ----
+  var last = 0;
+  function frame(t) {
+    var dt = (t - last) / 1000; last = t;
+    if (auto) cam.ry += 0.0016;
+    project();
+    draw();
+    if (pulse >= 0) { pulseT += dt; if (pulseT > 0.65) pulse = -1; }
+    requestAnimationFrame(frame);
+  }
+
+  function draw() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    var bg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+    bg.addColorStop(0, '#0a1120');
+    bg.addColorStop(1, '#03050a');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (var e = 0; e < links.length; e++) {
+      var pa = proj[links[e][0]], pb = proj[links[e][1]];
+      var s = (pa.s + pb.s) / 2;
+      var alpha = Math.max(0.025, Math.min(0.5, 0.5 * s * s));
+      ctx.strokeStyle = 'rgba(82,160,255,' + alpha.toFixed(3) + ')';
+      ctx.lineWidth = Math.max(0.4, 0.85 * s);
+      ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+    }
+
+    for (var i = 0; i < nodes.length; i++) {
+      var p = proj[i], n = nodes[i];
+      var r = Math.max(1.6, 3.4 * p.s * (n.size || 1));
+      var col = n.gold ? '255,202,96' : '128,190,255';
+      var g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3);
+      g.addColorStop(0, 'rgba(' + col + ',0.95)');
+      g.addColorStop(0.35, 'rgba(' + col + ',0.28)');
+      g.addColorStop(1, 'rgba(' + col + ',0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r * 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(' + col + ',0.98)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+      if (pulse === i) {
+        var pr = r * (2 + pulseT * 5);
+        ctx.strokeStyle = 'rgba(255,255,255,' + (0.8 - pulseT).toFixed(3) + ')';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.arc(p.x, p.y, pr, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  // 暴露一点诊断信息给无头渲染检查
+  document.title = '问络 · 神经网络纵深 | nodes=' + nodes.length + ' links=' + links.length;
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
