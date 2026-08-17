@@ -81,7 +81,7 @@
       showCursor(lx, ly);
       var mode = cb.mode ? cb.mode() : 'net';
       var target = mode === 'net' ? AppCanvas.nodeAtScreen(lx, ly) : null;
-      if (cb.onHover) cb.onHover(target);
+      if (cb.onHover) cb.onHover(target, r.left + lx, r.top + ly);
     } else {
       hideCursor();
       if (cb.onHover) cb.onHover(null);
