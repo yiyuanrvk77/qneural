@@ -10,8 +10,9 @@
   var S = {
     nodes: [], links: [], selected: null,
     tx: 0, ty: 0, s: 1, touched: false, locked: false,
-    hovered: null, awake: false,
+    hovered: null, hoverPos: null, awake: false,
     onSelect: null, onDive: null, onChanged: null, onLink: null, onRename: null,
+    onEdgeClick: null, onNodeTap: null, onNodeHover: null,
     pointers: new Map(), drag: null, pinch: null, lastTap: null,
     editing: null, cancelEdit: false
   };
@@ -52,19 +53,24 @@
   }
 
   function edgePath(a, b, i) {
-    var dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-    var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    var off = (i % 2 ? 1 : -1) * 16;
-    var cx = mx + (-dy / len) * off, cy = my + (dx / len) * off;
-    return 'M ' + a.x + ' ' + a.y + ' Q ' + cx + ' ' + cy + ' ' + b.x + ' ' + b.y;
+    // 横纵坐标轴式折线：先横向、再纵向、再横向；竖向为主的节点对则先纵向
+    var x1 = a.x, y1 = a.y, x2 = b.x, y2 = b.y;
+    var mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    if (Math.abs(x2 - x1) >= Math.abs(y2 - y1)) {
+      return 'M ' + x1 + ' ' + y1 + ' H ' + mx + ' V ' + y2 + ' H ' + x2;
+    }
+    return 'M ' + x1 + ' ' + y1 + ' V ' + my + ' H ' + x2 + ' V ' + y2;
   }
 
   function updateEdges() {
-    var i = 0;
+    var idx = new Map();
+    S.links.forEach(function (l, i) { idx.set(l.s + '>' + l.t, i); });
     Array.prototype.forEach.call(edgeG.children, function (p) {
+      var key = p.getAttribute('data-key');
+      if (!key) return;
       var a = byId(p.getAttribute('data-s')), b = byId(p.getAttribute('data-t'));
+      var i = idx.has(key) ? idx.get(key) : S.links.length;
       if (a && b) p.setAttribute('d', edgePath(a, b, i));
-      i++;
     });
   }
 
@@ -83,10 +89,19 @@
     S.links.forEach(function (l, i) {
       var a = byId(l.s), b = byId(l.t);
       if (!a || !b) return;
+      var key = l.s + '>' + l.t;
+      var hit = document.createElementNS(NS, 'path');
+      hit.setAttribute('d', edgePath(a, b, i));
+      hit.setAttribute('data-s', l.s);
+      hit.setAttribute('data-t', l.t);
+      hit.setAttribute('data-key', key);
+      hit.setAttribute('class', 'edge-hit');
+      edgeG.appendChild(hit);
       var p = document.createElementNS(NS, 'path');
       p.setAttribute('d', edgePath(a, b, i));
       p.setAttribute('data-s', l.s);
       p.setAttribute('data-t', l.t);
+      p.setAttribute('data-key', key);
       p.setAttribute('class', 'edge' + (S.selected && (S.selected === l.s || S.selected === l.t) ? ' hot' : ''));
       edgeG.appendChild(p);
     });
@@ -130,12 +145,19 @@
     if (g) g.remove();
   }
 
-  function hover(id) {
-    if (!id || S.hovered === id) return;
+  function hover(id, sx, sy) {
+    if (!id) return;
+    if (S.hovered === id) {
+      S.hoverPos = { x: sx, y: sy };
+      if (S.onNodeHover) S.onNodeHover(id, sx, sy);
+      return;
+    }
     clearHover();
     S.hovered = id;
+    S.hoverPos = { x: sx, y: sy };
     var g = nodeG.querySelector('[data-id="' + id + '"]');
     if (g) g.classList.add('hovered');
+    if (S.onNodeHover) S.onNodeHover(id, sx, sy);
   }
 
   function clearHover() {
@@ -143,6 +165,27 @@
     var g = nodeG.querySelector('[data-id="' + S.hovered + '"]');
     if (g) g.classList.remove('hovered');
     S.hovered = null;
+    S.hoverPos = null;
+    if (S.onNodeHover) S.onNodeHover(null);
+  }
+
+  function showFusionHint(s, t) {
+    clearFusionHint();
+    var a = byId(s), b = byId(t);
+    if (!a || !b) return;
+    var key = a.id + '>' + b.id;
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('class', 'ghost-edge');
+    p.setAttribute('data-s', a.id);
+    p.setAttribute('data-t', b.id);
+    p.setAttribute('data-key', key);
+    p.setAttribute('d', edgePath(a, b, S.links.length));
+    edgeG.appendChild(p);
+  }
+
+  function clearFusionHint() {
+    var g = edgeG.querySelector('.ghost-edge');
+    if (g) g.remove();
   }
 
   function nodeAtScreen(x, y) {
@@ -219,6 +262,11 @@
     if (e.target.closest('button,input,textarea')) return;
     if (e.target.closest('#toast')) return;
     e.preventDefault();
+    var edgeEl = e.target.closest('.edge-hit');
+    if (edgeEl) {
+      if (S.onEdgeClick) S.onEdgeClick(edgeEl.getAttribute('data-s'), edgeEl.getAttribute('data-t'));
+      return;
+    }
     if (card.setPointerCapture) { try { card.setPointerCapture(e.pointerId); } catch (err) { } }
     S.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (S.pointers.size === 2) {
@@ -316,6 +364,7 @@
         }
         S.lastTap = { id: d.id, t: now, x: p.x, y: p.y };
         select(d.id);
+        if (S.onNodeTap) S.onNodeTap(d.id);
       } else if (S.onChanged) {
         S.onChanged();
       }
@@ -359,6 +408,14 @@
       else if (e.key === 'Escape') { S.cancelEdit = true; commitRename(); }
     });
     editEl.addEventListener('blur', commitRename);
+    nodeG.addEventListener('mouseover', function (e) {
+      var g = e.target.closest('.node');
+      if (g && g.dataset.id) hover(g.dataset.id, e.clientX, e.clientY);
+    });
+    nodeG.addEventListener('mouseout', function (e) {
+      var g = e.target.closest('.node');
+      if (g && g.dataset.id && S.hovered === g.dataset.id) clearHover();
+    });
     if (typeof ResizeObserver !== 'undefined') {
       new ResizeObserver(function () {
         if (!S.touched) fit();
@@ -382,6 +439,8 @@
     setLocked: function (v) { S.locked = v; },
     hover: hover,
     clearHover: clearHover,
+    showFusionHint: showFusionHint,
+    clearFusionHint: clearFusionHint,
     setAwake: function (on) {
       S.awake = !!on;
       card.classList.toggle('awake', S.awake);
@@ -403,6 +462,9 @@
       S.onChanged = cb.onChanged;
       S.onLink = cb.onLink;
       S.onRename = cb.onRename;
+      S.onEdgeClick = cb.onEdgeClick;
+      S.onNodeTap = cb.onNodeTap;
+      S.onNodeHover = cb.onNodeHover;
     }
   };
 })();
