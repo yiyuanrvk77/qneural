@@ -12,6 +12,7 @@
     selected: null,
     dirty: false,
     saving: false,
+    rev: 0,
     saveTimer: null,
     retryTimer: null
   };
@@ -26,6 +27,7 @@
   function markDirty() {
     if (!S.net) return;
     S.dirty = true;
+    S.rev += 1;
     setSaveStatus('saving', '保存中…');
     clearTimeout(S.saveTimer);
     S.saveTimer = setTimeout(doSave, 700);
@@ -37,23 +39,31 @@
     clearTimeout(S.retryTimer);
     S.saving = true;
     setSaveStatus('saving', '保存中…');
+    var rev = S.rev;
     try {
       var data = await Api.updateNetwork(S.net.id, {
         title: S.net.title,
         desc: S.net.desc,
         nodes: S.net.nodes,
-        links: S.net.links
+        links: S.net.links,
+        fusionSuggestions: S.net.fusionSuggestions || []
       });
       S.net.updatedAt = data.network.updatedAt;
-      S.dirty = false;
-      S.saving = false;
-      setSaveStatus('ok', '已保存');
       var idx = S.networks.findIndex(function (n) { return n.id === S.net.id; });
       if (idx > -1) {
         S.networks[idx].updatedAt = data.network.updatedAt;
         S.networks[idx].nodeCount = data.network.nodes.length;
         AppEditor.renderNetworks(S.networks, S.net.id, netHandlers());
       }
+      if (S.rev === rev) {
+        S.dirty = false;
+        setSaveStatus('ok', '已保存');
+      } else {
+        setSaveStatus('saving', '保存中…');
+        clearTimeout(S.saveTimer);
+        S.saveTimer = setTimeout(doSave, 700);
+      }
+      S.saving = false;
     } catch (e) {
       S.saving = false;
       setSaveStatus('error', '同步失败 · 自动重试');
@@ -359,6 +369,7 @@
       AppEditor.renderInspector(null, inspHandlers());
       AppEditor.renderNetworks(S.networks, S.net.id, netHandlers());
       closeDrawers();
+      if (window.WorkbenchAI && window.WorkbenchAI.onNetworkOpened) window.WorkbenchAI.onNetworkOpened();
     } catch (e) {
       AppUI.toast('打开失败：' + e.message);
     }
@@ -501,8 +512,8 @@
   function initGesture() {
     if (!window.GestureMode) return;
     GestureMode.init({
-      onHover: function (id) {
-        if (id && S.net) AppCanvas.hover(id);
+      onHover: function (id, x, y) {
+        if (id && S.net) AppCanvas.hover(id, x, y);
         else AppCanvas.clearHover();
       },
       onPinch: function (id) {
@@ -557,6 +568,7 @@
         }
         S.net.nodes = data.nodes;
         S.net.links = data.links;
+        S.net.fusionSuggestions = data.fusionSuggestions || [];
         if (data.title) S.net.title = data.title;
         if (data.desc !== undefined) S.net.desc = data.desc;
         S.selected = null;
@@ -649,7 +661,10 @@
       E.sidebarMask.classList.toggle('hidden');
     });
     E.sidebarMask.addEventListener('click', closeDrawers);
-    E.btnInspector.addEventListener('click', openInspector);
+    E.btnInspector.addEventListener('click', function () {
+      openInspector();
+      if (window.WorkbenchAI) window.WorkbenchAI.closePanel();
+    });
     E.btnInspClose.addEventListener('click', function () {
       E.inspector.classList.remove('open');
       E.inspMask.classList.add('hidden');
@@ -756,6 +771,37 @@
         markDirty();
         renderStatus();
         renderInspectorForSelected();
+      },
+      onEdgeClick: function (s, t) {
+        if (!S.net) return;
+        var idx = -1;
+        for (var i = 0; i < S.net.links.length; i++) {
+          if ((S.net.links[i].s === s && S.net.links[i].t === t) || (S.net.links[i].s === t && S.net.links[i].t === s)) {
+            idx = i;
+            break;
+          }
+        }
+        if (idx < 0) return;
+        var link = S.net.links[idx];
+        S.net.links.splice(idx, 1);
+        AppCanvas.update(S.net.nodes, S.net.links, S.selected);
+        markDirty();
+        AppUI.toast('已删除连线', '撤销', function () {
+          S.net.links.splice(idx, 0, link);
+          AppCanvas.update(S.net.nodes, S.net.links, S.selected);
+          markDirty();
+        });
+      },
+      onNodeTap: function (id) {
+        if (window.AudioSynesthesia && window.AudioSynesthesia.isEnabled()) {
+          var n = byId(id);
+          if (n) window.AudioSynesthesia.play(n);
+        }
+      },
+      onNodeHover: function (id, x, y) {
+        if (!window.WorkbenchAI) return;
+        if (id) window.WorkbenchAI.hoverNode(id, x, y);
+        else window.WorkbenchAI.clearHover();
       }
     });
     AppDepth.init();
@@ -772,4 +818,22 @@
   }
 
   document.addEventListener('DOMContentLoaded', boot);
+
+  window.AppMain = {
+    openNetwork: openNetwork,
+    refreshNetworks: refreshNetworks,
+    getNet: function () { return S.net; },
+    getSelected: function () { return S.selected; },
+    selectNode: selectNode,
+    markDirty: markDirty,
+    addLink: function (a, b) {
+      var ok = addLink(a, b);
+      if (ok) {
+        AppCanvas.update(S.net.nodes, S.net.links, S.selected);
+        markDirty();
+      }
+      return ok;
+    },
+    types: AppCanvas.types
+  };
 })();
