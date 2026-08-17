@@ -94,7 +94,8 @@
         if (f.required && !values[f.key]) ok = false;
       });
       if (!ok) { toast('请填写必填项'); return; }
-      if (opts.onOk) opts.onOk(values);
+      var ret = opts.onOk ? opts.onOk(values) : null;
+      if (ret === false) return;
       closeModal();
     });
     var first = box.querySelector('input,select,textarea');
@@ -298,7 +299,8 @@
       title: net.title,
       desc: net.desc,
       nodes: net.nodes,
-      links: net.links
+      links: net.links,
+      fusionSuggestions: net.fusionSuggestions || []
     };
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
@@ -316,7 +318,7 @@
     var data = JSON.parse(text);
     if (!Array.isArray(data.nodes) || !Array.isArray(data.links)) throw new Error('文件格式不正确');
     if (data.nodes.length > 500) throw new Error('节点数超过上限（500）');
-    return { title: data.title || '', desc: data.desc || '', nodes: data.nodes, links: data.links };
+    return { title: data.title || '', desc: data.desc || '', nodes: data.nodes, links: data.links, fusionSuggestions: data.fusionSuggestions || [] };
   }
 
   window.AppUI = {
