@@ -81,6 +81,12 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           新建网络
         </button>
+        <button type="button" class="btn btn-ghost icon-btn-wide" id="btnAI" aria-label="AI 工作台">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" class="btn btn-ghost icon-btn-wide" id="btnSyn" aria-label="音阶模式" title="音阶模式：点击节点发声（联觉）">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
+        </button>
         <button type="button" class="btn btn-ghost icon-btn-wide" id="btnInspector" aria-label="节点编辑面板">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
@@ -91,6 +97,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <div class="dropdown hidden" id="userDropdown">
+            <button type="button" class="dropdown-item" id="btnAISettings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 9l1.5-1.5M15.5 3.5 17 5M5 15l-1.5 1.5M8.5 20.5 7 19M21 12h2M1 12h2M12 1v2M12 21v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              AI 设置
+            </button>
             <button type="button" class="dropdown-item" id="btnLogout">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               退出登录
@@ -179,6 +189,73 @@
         </div>
         <div class="insp-body" id="inspBody"></div>
       </aside>
+
+      <aside class="inspector hidden" id="aiPanel">
+        <div class="insp-head">
+          <span>AI 工作台</span>
+          <div class="wb-tabs" role="tablist">
+            <button type="button" class="wb-tab active" data-tab="chat" role="tab" aria-selected="true">对话</button>
+            <button type="button" class="wb-tab" data-tab="plan" role="tab">规划</button>
+            <button type="button" class="wb-tab" data-tab="fusion" role="tab">融合</button>
+            <button type="button" class="wb-tab" data-tab="vision" role="tab">识图</button>
+          </div>
+          <button type="button" class="icon-btn" id="btnAIClose" aria-label="关闭 AI 工作台">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="insp-body" id="aiBody">
+          <div class="wb-tab-pane" data-pane="chat">
+            <div class="wb-toolbar">
+              <select id="convSelect" title="选择对话" aria-label="选择对话"></select>
+              <button type="button" class="btn btn-ghost" id="btnConvNew" title="新对话">＋</button>
+              <button type="button" class="btn btn-ghost" id="btnConvDel" title="删除当前对话">×</button>
+            </div>
+            <div class="wb-msgs" id="wbMsgs"></div>
+            <div class="wb-compose">
+              <textarea id="wbInput" rows="2" placeholder="让 AI 深挖当前节点、拆解任务、生成追问…（Enter 发送）"></textarea>
+              <div class="wb-compose-row">
+                <button type="button" class="btn btn-ghost" id="btnToNet" title="把当前对话提炼成问题网络">提炼为网络</button>
+                <button type="button" class="btn btn-ghost" id="btnToDepth" title="把提炼的问题加入当前节点纵深">加入纵深</button>
+                <button type="button" class="btn btn-primary" id="btnSend">发送</button>
+              </div>
+            </div>
+          </div>
+          <div class="wb-tab-pane hidden" data-pane="plan">
+            <div class="wb-toolbar">
+              <select id="planSelect" title="选择规划" aria-label="选择规划"></select>
+              <button type="button" class="btn btn-ghost" id="btnPlanNew" title="新建规划">＋</button>
+              <button type="button" class="btn btn-ghost" id="btnPlanDel" title="删除当前规划">×</button>
+            </div>
+            <div class="plan-detail" id="planDetail"></div>
+          </div>
+          <div class="wb-tab-pane hidden" data-pane="fusion">
+            <div class="wb-toolbar">
+              <button type="button" class="btn btn-primary" id="btnFusionAnalyze">✦ 分析两个节点</button>
+            </div>
+            <p class="text-small muted" style="margin:10px 0">鼠标悬停在节点上会显示高融合概率提示；建议会保存在当前网络里。</p>
+            <div class="fusion-list" id="fusionList"></div>
+          </div>
+          <div class="wb-tab-pane hidden" data-pane="vision">
+            <div class="wb-toolbar">
+              <span class="text-small muted">上传或拖入图片，AI 会返回文字描述</span>
+            </div>
+            <div class="vision-drop" id="visionDrop">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V5m0 0-4 4m4-4 4 4M4 21h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="vision-drop-title">拖拽图片到这里，或点击选择</div>
+              <div class="text-small muted">支持 JPG / PNG / WebP</div>
+              <input type="file" id="visionFile" accept="image/*" hidden>
+            </div>
+            <div class="vision-preview hidden" id="visionPreview">
+              <img id="visionImg" alt="图片预览">
+              <button type="button" class="btn btn-ghost" id="btnVisionRemove">移除</button>
+            </div>
+            <textarea id="visionPrompt" class="vision-prompt" rows="2" placeholder="可选：告诉 AI 你想怎么描述（留空用默认）"></textarea>
+            <button type="button" class="btn btn-primary btn-block" id="btnVisionRun">识别这张图</button>
+            <div class="vision-result" id="visionResult"></div>
+          </div>
+        </div>
+      </aside>
+      <div class="mask hidden" id="aiMask"></div>
       <div class="mask hidden" id="inspMask"></div>
     </div>
   </div>
@@ -192,5 +269,7 @@
   <script src="/js/gesture.js"></script>
   <script src="/js/editor.js"></script>
   <script src="/js/app.js"></script>
+  <script src="/js/audio.js"></script>
+  <script src="/js/workbench.js"></script>
 </body>
 </html>
