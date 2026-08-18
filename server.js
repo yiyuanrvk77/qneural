@@ -44,30 +44,57 @@ function loadDB() {
 
 let db = loadDB();
 
-const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
+const DEFAULT_AI = {
+  deepseekKey: '',
+  model: 'deepseek-chat',
+  baseUrl: 'https://api.deepseek.com',
+  feishuWebhook: '',
+  visionKey: '',
+  visionModel: 'glm-4v-flash',
+  visionBaseUrl: 'https://open.bigmodel.cn/api/paas/v4'
+};
 
-function getConfig() {
+function normalizeAIConfig(c) {
+  return {
+    deepseekKey: typeof c.deepseekKey === 'string' ? c.deepseekKey : '',
+    model: typeof c.model === 'string' && c.model ? c.model : DEFAULT_AI.model,
+    baseUrl: typeof c.baseUrl === 'string' && c.baseUrl ? c.baseUrl.replace(/\/+$/, '') : DEFAULT_AI.baseUrl,
+    feishuWebhook: typeof c.feishuWebhook === 'string' ? c.feishuWebhook : '',
+    visionKey: typeof c.visionKey === 'string' ? c.visionKey : '',
+    visionModel: typeof c.visionModel === 'string' && c.visionModel ? c.visionModel : DEFAULT_AI.visionModel,
+    visionBaseUrl: typeof c.visionBaseUrl === 'string' && c.visionBaseUrl ? c.visionBaseUrl.replace(/\/+$/, '') : DEFAULT_AI.visionBaseUrl
+  };
+}
+
+function getAIConfig(user) {
+  const cfg = normalizeAIConfig(user && user.ai ? user.ai : {});
+  if (process.env.DEEPSEEK_API_KEY) cfg.deepseekKey = process.env.DEEPSEEK_API_KEY;
+  if (process.env.VISION_API_KEY) cfg.visionKey = process.env.VISION_API_KEY;
+  return cfg;
+}
+
+function deepseekKey(user) {
+  return getAIConfig(user).deepseekKey;
+}
+
+function visionKey(user) {
+  return getAIConfig(user).visionKey;
+}
+
+(function migrateLegacyAIConfig() {
+  const legacyPath = path.join(DATA_DIR, 'config.json');
+  let legacy = null;
   try {
-    const c = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    return {
-      deepseekKey: typeof c.deepseekKey === 'string' ? c.deepseekKey : '',
-      model: typeof c.model === 'string' && c.model ? c.model : 'deepseek-chat',
-      baseUrl: typeof c.baseUrl === 'string' && c.baseUrl ? c.baseUrl.replace(/\/+$/, '') : 'https://api.deepseek.com',
-      feishuWebhook: typeof c.feishuWebhook === 'string' ? c.feishuWebhook : '',
-      visionKey: typeof c.visionKey === 'string' ? c.visionKey : '',
-      visionModel: typeof c.visionModel === 'string' && c.visionModel ? c.visionModel : 'glm-4v-flash',
-      visionBaseUrl: typeof c.visionBaseUrl === 'string' && c.visionBaseUrl ? c.visionBaseUrl.replace(/\/+$/, '') : 'https://open.bigmodel.cn/api/paas/v4'
-    };
+    legacy = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
   } catch (e) {
-    return { deepseekKey: '', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com', feishuWebhook: '', visionKey: '', visionModel: 'glm-4v-flash', visionBaseUrl: 'https://open.bigmodel.cn/api/paas/v4' };
+    return;
   }
-}
-
-function saveConfig(cfg) {
-  const tmp = CONFIG_PATH + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2), 'utf8');
-  fs.renameSync(tmp, CONFIG_PATH);
-}
+  if (!legacy || typeof legacy !== 'object') return;
+  const hasValue = ['deepseekKey', 'feishuWebhook', 'visionKey'].some((k) => typeof legacy[k] === 'string' && legacy[k].trim());
+  if (hasValue && db.users.length === 1 && !db.users[0].ai) {
+    db.users[0].ai = normalizeAIConfig(legacy);
+  }
+})();
 
 class HttpError extends Error {
   constructor(code, message) {
@@ -76,11 +103,30 @@ class HttpError extends Error {
   }
 }
 
+let dbWriting = false;
+let dbDirty = false;
+
 function saveDB() {
   if (db.templates.length === 0) db.templates = TEMPLATES.slice();
-  const tmp = DB_PATH + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8');
-  fs.renameSync(tmp, DB_PATH);
+  if (dbWriting) {
+    dbDirty = true;
+    return;
+  }
+  dbWriting = true;
+  const flush = async () => {
+    do {
+      dbDirty = false;
+      const tmp = DB_PATH + '.tmp';
+      await fs.promises.writeFile(tmp, JSON.stringify(db, null, 2), 'utf8');
+      await fs.promises.rename(tmp, DB_PATH);
+    } while (dbDirty);
+    dbWriting = false;
+  };
+  flush().catch((e) => {
+    dbWriting = false;
+    dbDirty = false;
+    console.error('保存数据失败：', e);
+  });
 }
 
 function uid() {
@@ -302,19 +348,9 @@ function buildSystem(user) {
   return sys;
 }
 
-function deepseekKey() {
-  const cfg = getConfig();
-  return process.env.DEEPSEEK_API_KEY || cfg.deepseekKey;
-}
-
-function visionKey() {
-  const cfg = getConfig();
-  return process.env.VISION_API_KEY || cfg.visionKey;
-}
-
-async function callVision(imageUrl, prompt) {
-  const cfg = getConfig();
-  const key = visionKey();
+async function callVision(user, imageUrl, prompt) {
+  const cfg = getAIConfig(user);
+  const key = cfg.visionKey;
   if (!key) throw new HttpError(400, '未配置识图 API Key，请先在「用户 → AI 设置」中配置');
   const body = {
     model: cfg.visionModel,
@@ -346,9 +382,9 @@ async function callVision(imageUrl, prompt) {
   return content;
 }
 
-async function streamDeepSeek(messages, onToken) {
-  const cfg = getConfig();
-  const key = deepseekKey();
+async function streamDeepSeek(user, messages, onToken) {
+  const cfg = getAIConfig(user);
+  const key = cfg.deepseekKey;
   if (!key) throw new HttpError(400, '未配置 DeepSeek API Key，请先在「用户 → AI 设置」中配置');
   const resp = await fetch(cfg.baseUrl + '/chat/completions', {
     method: 'POST',
@@ -388,9 +424,9 @@ async function streamDeepSeek(messages, onToken) {
   }
 }
 
-async function callDeepSeekJSON(messages) {
-  const cfg = getConfig();
-  const key = deepseekKey();
+async function callDeepSeekJSON(user, messages) {
+  const cfg = getAIConfig(user);
+  const key = cfg.deepseekKey;
   if (!key) throw new HttpError(400, '未配置 DeepSeek API Key，请先在「用户 → AI 设置」中配置');
   const body = { model: cfg.model, temperature: 0.3, messages };
   if (cfg.model !== 'deepseek-reasoner') body.response_format = { type: 'json_object' };
@@ -431,8 +467,8 @@ function extractJSON(text) {
   return null;
 }
 
-async function sendFeishu(title, content) {
-  const cfg = getConfig();
+async function sendFeishu(user, title, content) {
+  const cfg = getAIConfig(user);
   const url = cfg.feishuWebhook;
   if (!url) return false;
   try {
@@ -453,7 +489,7 @@ function depthChain(n) {
   return (n.depth || []).slice(0, 3).map((d, i) => (i + 1) + '. ' + (d.q || '')).join(' ');
 }
 
-async function analyzeFusionPair(a, b) {
+async function analyzeFusionPair(user, a, b) {
   const messages = [
     {
       role: 'system',
@@ -464,7 +500,7 @@ async function analyzeFusionPair(a, b) {
       content: '问题A："' + a.label + '"（追问链路：' + depthChain(a) + '）\n问题B："' + b.label + '"（追问链路：' + depthChain(b) + '）'
     }
   ];
-  const content = await callDeepSeekJSON(messages);
+  const content = await callDeepSeekJSON(user, messages);
   const obj = extractJSON(content);
   if (!obj) throw new Error('AI 返回格式无法解析，请重试');
   return {
@@ -602,12 +638,12 @@ async function handleAPI(req, res, url) {
 
   // ---- AI 设置 / 记忆 / 集成 ----
   if (p === '/api/config' && method === 'GET') {
-    const cfg = getConfig();
-    return sendJSON(res, 200, { hasKey: !!deepseekKey(), model: cfg.model, baseUrl: cfg.baseUrl, hasFeishu: !!cfg.feishuWebhook, hasVisionKey: !!visionKey(), visionModel: cfg.visionModel, visionBaseUrl: cfg.visionBaseUrl });
+    const cfg = getAIConfig(user);
+    return sendJSON(res, 200, { hasKey: !!cfg.deepseekKey, model: cfg.model, baseUrl: cfg.baseUrl, hasFeishu: !!cfg.feishuWebhook, hasVisionKey: !!cfg.visionKey, visionModel: cfg.visionModel, visionBaseUrl: cfg.visionBaseUrl });
   }
   if (p === '/api/config' && method === 'PUT') {
     const body = await readBody(req);
-    const cfg = getConfig();
+    const cfg = getAIConfig(user);
     if (typeof body.deepseekKey === 'string' && body.deepseekKey.trim()) cfg.deepseekKey = body.deepseekKey.trim().slice(0, 200);
     if (typeof body.model === 'string' && body.model.trim()) cfg.model = body.model.trim().slice(0, 50);
     if (typeof body.baseUrl === 'string' && body.baseUrl.trim()) {
@@ -623,8 +659,9 @@ async function handleAPI(req, res, url) {
       if (!/^https:\/\//.test(vu)) return sendError(res, 400, '识图接口地址必须以 https:// 开头');
       cfg.visionBaseUrl = vu.slice(0, 200);
     }
-    saveConfig(cfg);
-    return sendJSON(res, 200, { ok: true, hasKey: !!deepseekKey(), hasFeishu: !!cfg.feishuWebhook, hasVisionKey: !!visionKey() });
+    user.ai = cfg;
+    saveDB();
+    return sendJSON(res, 200, { ok: true, hasKey: !!cfg.deepseekKey, hasFeishu: !!cfg.feishuWebhook, hasVisionKey: !!cfg.visionKey });
   }
   if (p === '/api/me' && method === 'PUT') {
     const body = await readBody(req);
@@ -635,8 +672,8 @@ async function handleAPI(req, res, url) {
     return sendJSON(res, 200, { user: publicUser(user) });
   }
   if (p === '/api/integrations/test' && method === 'POST') {
-    if (!getConfig().feishuWebhook) return sendError(res, 400, '请先在 AI 设置中填写飞书 Webhook 地址');
-    const ok = await sendFeishu('问络 · 测试通知', '飞书集成配置成功！以后融合建议和规划进度会自动推送到这里。');
+    if (!getAIConfig(user).feishuWebhook) return sendError(res, 400, '请先在 AI 设置中填写飞书 Webhook 地址');
+    const ok = await sendFeishu(user, '问络 · 测试通知', '飞书集成配置成功！以后融合建议和规划进度会自动推送到这里。');
     return sendJSON(res, 200, { ok });
   }
 
@@ -697,7 +734,7 @@ async function handleAPI(req, res, url) {
     if (!image) return sendError(res, 400, '请先上传或提供一张图片');
     const prompt = String(body.prompt || '').trim().slice(0, 2000);
     try {
-      const description = await callVision(image, prompt);
+      const description = await callVision(user, image, prompt);
       return sendJSON(res, 200, { description });
     } catch (e) {
       return sendError(res, e.httpCode || 500, e.message);
@@ -711,7 +748,7 @@ async function handleAPI(req, res, url) {
     if (conv.ownerId !== user.id) return sendError(res, 403, '无权访问该对话');
     const msg = String(body.message || '').trim();
     if (!msg) return sendError(res, 400, '消息不能为空');
-    if (!deepseekKey()) return sendError(res, 400, '未配置 DeepSeek API Key，请先在「AI 设置」中配置');
+    if (!deepseekKey(user)) return sendError(res, 400, '未配置 DeepSeek API Key，请先在「AI 设置」中配置');
     if (!Array.isArray(conv.messages)) conv.messages = [];
     conv.messages.push({ role: 'user', content: msg, ts: nowISO() });
     if (conv.messages.length > 200) conv.messages = conv.messages.slice(-200);
@@ -730,7 +767,7 @@ async function handleAPI(req, res, url) {
     res.write('data: ' + JSON.stringify({ type: 'start' }) + '\n\n');
     let acc = '';
     try {
-      await streamDeepSeek(messages, function (tok) {
+      await streamDeepSeek(user, messages, function (tok) {
         acc += tok;
         res.write('data: ' + JSON.stringify({ type: 'token', text: tok }) + '\n\n');
       });
@@ -757,7 +794,7 @@ async function handleAPI(req, res, url) {
     if (msgs.length === 0) return sendError(res, 400, '对话还没有内容');
     const transcript = msgs.slice(-40).map((m) => m.role + '：' + String(m.content || '').slice(0, 800)).join('\n');
     try {
-      const content = await callDeepSeekJSON([
+      const content = await callDeepSeekJSON(user, [
         { role: 'system', content: '你是一名问题提炼师。从对话中提炼出最值得追问的核心问题，输出 JSON：{"questions":[{"title":"一句话问题"}]}。最多 8 个，标题要具体、独立、可回答。只输出 JSON。' },
         { role: 'user', content: transcript }
       ]);
@@ -783,9 +820,9 @@ async function handleAPI(req, res, url) {
     const b = net.nodes.find((n) => n.id === body.target);
     if (!a || !b || a.id === b.id) return sendError(res, 400, '请选择两个不同的节点');
     try {
-      const r = await analyzeFusionPair(a, b);
+      const r = await analyzeFusionPair(user, a, b);
       if (r.fusionProbability >= 0.55) {
-        sendFeishu('问络 · 新融合建议', '「' + a.label + '」 × 「' + b.label + '」\n融合概率 ' + Math.round(r.fusionProbability * 100) + '%\n' + (r.reason || ''));
+        sendFeishu(user, '问络 · 新融合建议', '「' + a.label + '」 × 「' + b.label + '」\n融合概率 ' + Math.round(r.fusionProbability * 100) + '%\n' + (r.reason || ''));
       }
       return sendJSON(res, 200, {
         result: {
@@ -834,7 +871,7 @@ async function handleAPI(req, res, url) {
     db.plans.push(plan);
     saveDB();
     try {
-      const content = await callDeepSeekJSON([
+      const content = await callDeepSeekJSON(user, [
         { role: 'system', content: '你是一个任务规划师。把用户目标拆解为 3-6 个可执行、可验证的步骤。输出 JSON：{"steps":[{"title":"步骤名","detail":"做什么、怎么做、完成标准"}]}。步骤要按顺序、相互独立。只输出 JSON。' },
         { role: 'user', content: goal }
       ]);
@@ -864,14 +901,15 @@ async function handleAPI(req, res, url) {
     saveDB();
     return sendJSON(res, 200, { ok: true });
   }
-  const sm = p.match(/^\/api\/plans\/([^/]+)\/steps\/([^/]+)$/);
+  const sm = p.match(/^\/api\/plans\/([^/]+)\/steps\/([^/]+)(\/run)?$/);
   if (sm && (method === 'POST' || method === 'PUT')) {
     const plan = db.plans.find((pl) => pl.id === sm[1]);
     if (!plan) return sendError(res, 404, '规划不存在');
     if (plan.ownerId !== user.id) return sendError(res, 403, '无权访问该规划');
     const step = (plan.steps || []).find((s) => s.id === sm[2]);
     if (!step) return sendError(res, 404, '步骤不存在');
-    if (method === 'PUT') {
+    const isRun = sm[3] === '/run';
+    if (method === 'PUT' && !isRun) {
       const body = await readBody(req);
       if (body.status === 'done' || body.status === 'pending' || body.status === 'failed') step.status = body.status;
       if (typeof body.result === 'string') step.result = body.result.slice(0, 8000);
@@ -881,7 +919,7 @@ async function handleAPI(req, res, url) {
       saveDB();
       return sendJSON(res, 200, { plan: plan });
     }
-    if (p.endsWith('/run')) {
+    if (method === 'POST' && isRun) {
       if (step.status === 'running') return sendError(res, 400, '该步骤正在执行中');
       step.status = 'running';
       step.updatedAt = nowISO();
@@ -892,7 +930,7 @@ async function handleAPI(req, res, url) {
           .filter((s) => s.status === 'done' && s.id !== step.id)
           .map((s) => '已完成：' + s.title + (s.result ? '——' + String(s.result).slice(0, 400) : ''))
           .join('\n');
-        const content = await callDeepSeekJSON([
+        const content = await callDeepSeekJSON(user, [
           { role: 'system', content: '你是「问络工作台」的执行助手。针对给定的任务步骤，输出具体、可落地的执行结果（方案、清单、代码或要点均可）。回答用中文。' },
           { role: 'user', content: '目标：' + plan.goal + '\n当前步骤：' + step.title + '\n步骤说明：' + step.detail + (prev ? '\n已完成步骤的产出：\n' + prev : '') }
         ]);
@@ -905,9 +943,10 @@ async function handleAPI(req, res, url) {
       step.updatedAt = nowISO();
       plan.updatedAt = nowISO();
       saveDB();
-      if (step.status === 'done') sendFeishu('问络 · 规划进度', '步骤完成：「' + step.title + '」\n目标：' + plan.goal.slice(0, 100));
+      if (step.status === 'done') sendFeishu(user, '问络 · 规划进度', '步骤完成：「' + step.title + '」\n目标：' + plan.goal.slice(0, 100));
       return sendJSON(res, 200, { plan: plan });
     }
+    return sendError(res, 405, '方法不允许');
   }
 
   if (p === '/api/networks' && method === 'GET') {
@@ -1011,6 +1050,60 @@ function listen(port, attempt) {
     console.log('数据目录：' + DATA_DIR);
   });
 }
+
+function saveDBSync() {
+  if (db.templates.length === 0) db.templates = TEMPLATES.slice();
+  const tmp = DB_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf8');
+  fs.renameSync(tmp, DB_PATH);
+}
+
+let shuttingDown = false;
+let finalized = false;
+
+function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log('\n收到 ' + signal + '，正在保存数据后退出…');
+
+  const finalize = () => {
+    if (finalized) return;
+    finalized = true;
+    try {
+      if (!dbWriting && dbDirty) saveDBSync();
+    } catch (e) {
+      console.error('保存数据失败：', e);
+    }
+    process.exit(0);
+  };
+
+  const timer = setTimeout(finalize, 3000);
+
+  if (server.listening) {
+    server.close(() => {
+      if (dbWriting) {
+        const iv = setInterval(() => {
+          if (!dbWriting) {
+            clearInterval(iv);
+            clearTimeout(timer);
+            finalize();
+          }
+        }, 20);
+      } else {
+        clearTimeout(timer);
+        finalize();
+      }
+    });
+    if (typeof server.closeAllConnections === 'function') {
+      server.closeAllConnections();
+    }
+  } else {
+    finalize();
+  }
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 saveDB();
 listen(PORT, 0);
