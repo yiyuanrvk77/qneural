@@ -254,6 +254,27 @@ svg.logo{width:44px;height:44px;color:var(--primary);}
 .empty-title{font-size:1.05rem;font-weight:600;margin:0;}
 .empty-actions{display:flex;gap:10px;margin-top:10px;}
 
+.seed-state{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;z-index:21;pointer-events:none;
+}
+.seed-state .seed-point{
+  pointer-events:auto;position:relative;width:92px;height:92px;border-radius:50%;border:none;background:transparent;cursor:pointer;
+}
+.seed-state .seed-ring{
+  position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--primary);opacity:.7;
+  animation:seed-pulse 2.2s ease-in-out infinite;
+}
+.seed-state .seed-dot{
+  position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--primary);
+  box-shadow:0 0 24px var(--ring);
+}
+.seed-state .seed-hint{color:var(--muted);font-size:.9rem;margin:0;}
+@keyframes seed-pulse{
+  0%,100%{transform:scale(1);opacity:.65;}
+  50%{transform:scale(1.22);opacity:.12;}
+}
+
 /* ---------- depth view ---------- */
 .depth-view{
   position:absolute;inset:0;display:flex;flex-direction:column;z-index:30;background:var(--surface);

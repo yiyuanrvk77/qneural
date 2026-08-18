@@ -27,9 +27,9 @@
     return C4 * Math.pow(2, (oct * 12 + SCALE[deg]) / 12);
   }
 
-  function play(node) {
+  function play(node, force) {
     var c = ensureCtx();
-    if (!c || !enabled) return;
+    if (!c || (!enabled && !force)) return;
     var t = c.currentTime;
     var osc = c.createOscillator();
     var gain = c.createGain();

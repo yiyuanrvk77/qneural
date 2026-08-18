@@ -120,6 +120,26 @@
     markDirty();
   }
 
+  function updateCanvasOverlays() {
+    if (S.net && S.net.nodes.length === 0) {
+      E.seedState.classList.remove('hidden');
+      E.emptyState.classList.add('hidden');
+    } else {
+      E.seedState.classList.add('hidden');
+    }
+  }
+
+  function createFirstNode() {
+    if (!S.net) return;
+    var n = AppCanvas.addNode('母命题', 'goal');
+    S.net.nodes.push(n);
+    selectNode(n.id);
+    AppCanvas.startRename(n.id);
+    updateCanvasOverlays();
+    if (window.AudioSynesthesia) window.AudioSynesthesia.play(n, true);
+    markDirty();
+  }
+
   function deleteNode(id) {
     var n = byId(id);
     if (!n) return;
@@ -131,11 +151,13 @@
     AppCanvas.update(S.net.nodes, S.net.links, null);
     renderStatus();
     AppEditor.renderInspector(null, inspHandlers());
+    updateCanvasOverlays();
     markDirty();
     AppUI.toast('已删除「' + n.label + '」', '撤销', function () {
       S.net.nodes.splice(idx, 0, n);
       removedLinks.forEach(function (l) { S.net.links.push(l); });
       selectNode(id);
+      updateCanvasOverlays();
       markDirty();
     });
   }
@@ -365,6 +387,7 @@
       E.netTitle.textContent = S.net.title;
       setSaveStatus('ok', '已保存');
       E.emptyState.classList.add('hidden');
+      updateCanvasOverlays();
       renderStatus();
       AppEditor.renderInspector(null, inspHandlers());
       AppEditor.renderNetworks(S.networks, S.net.id, netHandlers());
@@ -382,6 +405,7 @@
     E.netTitle.textContent = '未选择网络';
     setSaveStatus('ok', '');
     E.emptyState.classList.remove('hidden');
+    E.seedState.classList.add('hidden');
     renderStatus();
     AppEditor.renderInspector(null, inspHandlers());
   }
@@ -428,7 +452,6 @@
           var data = await Api.createNetwork({ title: v.title, desc: v.desc, nodes: [], links: [] });
           await refreshNetworks();
           await openNetwork(data.network.id);
-          addNode();
         } catch (e) {
           AppUI.toast('创建失败：' + e.message);
         }
@@ -621,6 +644,7 @@
       E.sidebarMask.classList.remove('hidden');
       AppUI.toast('在左侧“模板库”选择模板');
     });
+    E.seedPoint.addEventListener('click', createFirstNode);
     E.btnExport.addEventListener('click', exportNet);
     E.importFile.addEventListener('change', function () {
       if (E.importFile.files && E.importFile.files[0]) importNet(E.importFile.files[0]);
@@ -744,6 +768,8 @@
     E.btnNewNet = $('btnNewNet');
     E.btnEmptyNew = $('btnEmptyNew');
     E.btnEmptyTpl = $('btnEmptyTpl');
+    E.seedState = $('seedState');
+    E.seedPoint = $('seedPoint');
     E.btnExport = $('btnExport');
     E.btnImport = $('btnImport');
     E.importFile = $('importFile');

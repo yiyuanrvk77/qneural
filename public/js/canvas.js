@@ -450,11 +450,11 @@
     nodeAtScreen: nodeAtScreen,
     getNodes: function () { return S.nodes; },
     startRename: startRename,
-    addNode: function (label) {
+    addNode: function (label, type) {
       var w = card.clientWidth || 800, h = card.clientHeight || 540;
       var x = (w / 2 - S.tx) / S.s + (Math.random() * 80 - 40);
       var y = (h / 2 - S.ty) / S.s + (Math.random() * 60 - 30);
-      return { id: 'n' + Date.now() + Math.floor(Math.random() * 999), label: label || '新问题', type: 'think', x: Math.round(x), y: Math.round(y), depth: [{ q: '这个问题具体指什么？', a: '先缩小边界，再给出一个例子。', opts: ['定义', '边界', '例子'], extra: '' }] };
+      return { id: 'n' + Date.now() + Math.floor(Math.random() * 999), label: label || '新问题', type: type || 'think', x: Math.round(x), y: Math.round(y), depth: [{ q: '这个问题具体指什么？', a: '先缩小边界，再给出一个例子。', opts: ['定义', '边界', '例子'], extra: '' }] };
     },
     setCallbacks: function (cb) {
       S.onSelect = cb.onSelect;

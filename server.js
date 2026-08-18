@@ -593,8 +593,17 @@ async function handleAPI(req, res, url) {
       createdAt: nowISO()
     };
     db.users.push(user);
-    const tpl = db.templates[0] || TEMPLATES[0];
-    db.networks.push(cloneTemplate(tpl, user.id, '我的第一个问题网络'));
+    db.networks.push({
+      id: uid(),
+      ownerId: user.id,
+      title: '空白画布',
+      desc: '',
+      nodes: [],
+      links: [],
+      fusionSuggestions: [],
+      createdAt: nowISO(),
+      updatedAt: nowISO()
+    });
     saveDB();
     setCookie(res, signToken({ uid: user.id, exp: Date.now() + TOKEN_TTL }));
     return sendJSON(res, 200, { user: publicUser(user) });
