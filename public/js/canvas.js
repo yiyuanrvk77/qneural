@@ -12,7 +12,7 @@
     tx: 0, ty: 0, s: 1, touched: false, locked: false,
     hovered: null, hoverPos: null, awake: false,
     onSelect: null, onDive: null, onChanged: null, onLink: null, onRename: null,
-    onEdgeClick: null, onNodeTap: null, onNodeHover: null,
+    onEdgeClick: null, onNodeTap: null, onNodeHover: null, onEmptyDouble: null,
     pointers: new Map(), drag: null, pinch: null, lastTap: null,
     editing: null, cancelEdit: false
   };
@@ -397,6 +397,12 @@
     card.addEventListener('pointermove', pointerMove);
     card.addEventListener('pointerup', pointerUp);
     card.addEventListener('pointercancel', pointerUp);
+    card.addEventListener('dblclick', function (e) {
+      if (S.locked) return;
+      if (e.target.closest('.node') || e.target.closest('.edge-hit') || e.target.closest('.handle')) return;
+      if (e.target.closest('#seedState') || e.target.closest('#emptyState')) return;
+      if (S.onEmptyDouble) S.onEmptyDouble();
+    });
     card.addEventListener('wheel', function (e) {
       if (S.locked) return;
       e.preventDefault();
@@ -465,6 +471,7 @@
       S.onEdgeClick = cb.onEdgeClick;
       S.onNodeTap = cb.onNodeTap;
       S.onNodeHover = cb.onNodeHover;
+      S.onEmptyDouble = cb.onEmptyDouble;
     }
   };
 })();

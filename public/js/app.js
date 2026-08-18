@@ -140,6 +140,12 @@
     markDirty();
   }
 
+  function createNodeFromCanvas() {
+    if (!S.net) { AppUI.toast('请先创建或选择一个网络'); return; }
+    if (S.net.nodes.length === 0) { AppUI.toast('点击画布中央的连接点，创造第一个母命题'); return; }
+    addNode();
+  }
+
   function deleteNode(id) {
     var n = byId(id);
     if (!n) return;
@@ -638,6 +644,7 @@
     });
 
     E.btnNewNet.addEventListener('click', newNetworkModal);
+    E.btnAddNode.addEventListener('click', createNodeFromCanvas);
     E.btnEmptyNew.addEventListener('click', newNetworkModal);
     E.btnEmptyTpl.addEventListener('click', function () {
       E.sidebar.classList.add('open');
@@ -766,6 +773,7 @@
     E.btnInspector = $('btnInspector');
     E.btnInspClose = $('btnInspClose');
     E.btnNewNet = $('btnNewNet');
+    E.btnAddNode = $('btnAddNode');
     E.btnEmptyNew = $('btnEmptyNew');
     E.btnEmptyTpl = $('btnEmptyTpl');
     E.seedState = $('seedState');
@@ -828,6 +836,9 @@
         if (!window.WorkbenchAI) return;
         if (id) window.WorkbenchAI.hoverNode(id, x, y);
         else window.WorkbenchAI.clearHover();
+      },
+      onEmptyDouble: function () {
+        createNodeFromCanvas();
       }
     });
     AppDepth.init();

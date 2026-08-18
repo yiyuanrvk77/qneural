@@ -3,6 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { exec } = require('child_process');
 
 const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, 'public');
@@ -489,6 +490,19 @@ function depthChain(n) {
   return (n.depth || []).slice(0, 3).map((d, i) => (i + 1) + '. ' + (d.q || '')).join(' ');
 }
 
+function execShell(command) {
+  return new Promise((resolve) => {
+    exec(command, { cwd: ROOT, timeout: 30000, maxBuffer: 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+      resolve({
+        ok: !err,
+        stdout: String(stdout || '').slice(0, 8000),
+        stderr: String(stderr || '').slice(0, 4000),
+        error: err ? String(err.message || err) : ''
+      });
+    });
+  });
+}
+
 async function analyzeFusionPair(user, a, b) {
   const messages = [
     {
@@ -881,7 +895,7 @@ async function handleAPI(req, res, url) {
     saveDB();
     try {
       const content = await callDeepSeekJSON(user, [
-        { role: 'system', content: '你是一个任务规划师。把用户目标拆解为 3-6 个可执行、可验证的步骤。输出 JSON：{"steps":[{"title":"步骤名","detail":"做什么、怎么做、完成标准"}]}。步骤要按顺序、相互独立。只输出 JSON。' },
+        { role: 'system', content: '你是一个任务规划师。把用户目标拆解为 3-6 个可执行、可验证的步骤。输出 JSON：{"steps":[{"title":"步骤名","detail":"做什么、怎么做、完成标准","command":"可选：一条能在 Windows 命令行执行的单条命令，用于真正执行该步骤；不适用时填空字符串"}]}。步骤要按顺序、相互独立。只输出 JSON。' },
         { role: 'user', content: goal }
       ]);
       const obj = extractJSON(content);
@@ -889,12 +903,13 @@ async function handleAPI(req, res, url) {
         .slice(0, 6)
         .map((s) => ({
           title: String(s && s.title || '').trim().slice(0, 40),
-          detail: String(s && s.detail || '').trim().slice(0, 300)
+          detail: String(s && s.detail || '').trim().slice(0, 300),
+          command: String(s && s.command || '').trim().slice(0, 600)
         }))
         .filter((s) => s.title);
-      plan.steps = steps.map((s) => ({ id: uid(), title: s.title, detail: s.detail, status: 'pending', result: '', error: '', updatedAt: nowISO() }));
+      plan.steps = steps.map((s) => ({ id: uid(), title: s.title, detail: s.detail, command: s.command, status: 'pending', result: '', error: '', updatedAt: nowISO() }));
     } catch (e) {
-      plan.steps = [{ id: uid(), title: '拆解并推进目标', detail: goal, status: 'pending', result: '', error: '', updatedAt: nowISO() }];
+      plan.steps = [{ id: uid(), title: '拆解并推进目标', detail: goal, command: '', status: 'pending', result: '', error: '', updatedAt: nowISO() }];
     }
     plan.updatedAt = nowISO();
     saveDB();
@@ -922,6 +937,7 @@ async function handleAPI(req, res, url) {
       const body = await readBody(req);
       if (body.status === 'done' || body.status === 'pending' || body.status === 'failed') step.status = body.status;
       if (typeof body.result === 'string') step.result = body.result.slice(0, 8000);
+      if (typeof body.command === 'string') step.command = body.command.trim().slice(0, 600);
       step.error = '';
       step.updatedAt = nowISO();
       plan.updatedAt = nowISO();
@@ -935,16 +951,26 @@ async function handleAPI(req, res, url) {
       plan.updatedAt = nowISO();
       saveDB();
       try {
-        const prev = plan.steps
-          .filter((s) => s.status === 'done' && s.id !== step.id)
-          .map((s) => '已完成：' + s.title + (s.result ? '——' + String(s.result).slice(0, 400) : ''))
-          .join('\n');
-        const content = await callDeepSeekJSON(user, [
-          { role: 'system', content: '你是「问络工作台」的执行助手。针对给定的任务步骤，输出具体、可落地的执行结果（方案、清单、代码或要点均可）。回答用中文。' },
-          { role: 'user', content: '目标：' + plan.goal + '\n当前步骤：' + step.title + '\n步骤说明：' + step.detail + (prev ? '\n已完成步骤的产出：\n' + prev : '') }
-        ]);
-        step.result = content.slice(0, 8000);
-        step.status = 'done';
+        if (step.command) {
+          if (process.env.QNEURAL_ENABLE_SHELL !== '1') {
+            throw new HttpError(400, '服务未开启命令执行，请设置环境变量 QNEURAL_ENABLE_SHELL=1 后重启');
+          }
+          const r = await execShell(step.command);
+          step.result = (r.ok ? '命令执行成功\n' : '命令执行失败\n') + (r.stdout ? '\n[输出]\n' + r.stdout : '') + (r.stderr ? '\n[错误]\n' + r.stderr : '') + (r.error ? '\n[异常]\n' + r.error : '');
+          step.status = r.ok ? 'done' : 'failed';
+          if (!r.ok) step.error = '命令执行失败';
+        } else {
+          const prev = plan.steps
+            .filter((s) => s.status === 'done' && s.id !== step.id)
+            .map((s) => '已完成：' + s.title + (s.result ? '——' + String(s.result).slice(0, 400) : ''))
+            .join('\n');
+          const content = await callDeepSeekJSON(user, [
+            { role: 'system', content: '你是「问络工作台」的执行助手。针对给定的任务步骤，输出具体、可落地的执行结果（方案、清单、代码或要点均可）。回答用中文。' },
+            { role: 'user', content: '目标：' + plan.goal + '\n当前步骤：' + step.title + '\n步骤说明：' + step.detail + (prev ? '\n已完成步骤的产出：\n' + prev : '') }
+          ]);
+          step.result = content.slice(0, 8000);
+          step.status = 'done';
+        }
       } catch (e) {
         step.status = 'failed';
         step.error = e.httpCode ? e.message : ('执行失败：' + e.message);
